@@ -49,8 +49,11 @@ impl Syntaxer {
 }
 
 pub struct Editor<'a> {
+    #[warn(dead_code)]
     path_str: String,
+    #[warn(dead_code)]
     path: &'a Path,
+    #[warn(dead_code)]
     bufreader: BufReader<File>,
     screen_w: usize,
     screen_h: usize,
@@ -249,6 +252,7 @@ impl<'a> Editor<'a> {
         self.get_displayable_line();
         self.display()?;
         self.stdout.flush()?;
+
         loop {
             if event::poll(Duration::from_millis(50))? {
                 match self.pick_event()? {
@@ -266,8 +270,8 @@ impl<'a> Editor<'a> {
         }
         // queue!(self.stdout, LeaveAlternateScreen)?;
         queue!(self.stdout, terminal::Clear(terminal::ClearType::All))?;
-        self.stdout.flush()?;
         disable_raw_mode()?;
+        self.stdout.flush()?;
         Ok(())
     }
 }
