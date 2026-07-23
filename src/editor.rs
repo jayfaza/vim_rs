@@ -23,7 +23,7 @@ use syntect::{
 
 static SYNTAXSET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
 static THEME: Lazy<Theme> =
-    Lazy::new(|| ThemeSet::load_defaults().themes["base16-ocean.dark"].clone());
+    Lazy::new(|| ThemeSet::load_defaults().themes["base16-eighties.dark"].clone());
 
 pub struct Syntaxer {
     ss: SyntaxSet,
@@ -78,7 +78,7 @@ impl<'a> Editor<'a> {
             path: Path::new(path),
             bufreader: buf,
             file_entry: file_entry.clone(),
-            display_lines: vec!(),
+            display_lines: vec![],
             screen_w: w.into(),
             screen_h: h.into(),
             cursor_line: 0,
@@ -111,6 +111,7 @@ impl<'a> Editor<'a> {
                 } else {
                     self.display_y += 1;
                     self.cursor_line += 1;
+                    self.scroll_down();
                     self.clear_screen();
                     return false;
                 }
@@ -127,6 +128,7 @@ impl<'a> Editor<'a> {
                 } else {
                     self.display_y -= 1;
                     self.cursor_line -= 1;
+                    self.scroll_up();
                     self.clear_screen();
                     return false;
                 }
@@ -171,8 +173,8 @@ impl<'a> Editor<'a> {
             _ => Ok(None),
         }
     }
-    
-    pub fn display_lines(&mut self) {
+
+    pub fn get_displayable_line(&mut self) {
         let range = self.display_y + self.screen_h;
         let bound = match range {
             range if range > self.lines => self.lines,
@@ -181,18 +183,44 @@ impl<'a> Editor<'a> {
         };
 
         self.display_lines = self.file_entry[self.display_y..bound].to_vec();
+        let mut syntaxed_lines: Vec<String> = Vec::new();
+        for line in self.display_lines.clone() {
+            let syntax_line = self.syntaxer.highlight_line(&line);
+            syntaxed_lines.push(syntax_line);
+        }
+        self.display_lines = syntaxed_lines;
+    }
+
+    pub fn scroll_down(&mut self) {
+        self.display_lines.remove(0);
+        let range = self.display_y + self.screen_h;
+        let bound = match range {
+            range if range > self.lines => self.lines,
+            range if range <= self.lines => range,
+            _ => self.lines,
+        };
+        let next_syntaxed_line = self
+            .syntaxer
+            .highlight_line(self.file_entry.get(bound - 1).expect("error"));
+        self.display_lines.push(next_syntaxed_line);
+    }
+
+    pub fn scroll_up(&mut self) {
+        self.display_lines.pop();
+        let prev_syntaxed_line = self
+            .syntaxer
+            .highlight_line(self.file_entry.get(self.cursor_line).expect("error"));
+
+        self.display_lines.insert(0, prev_syntaxed_line);
     }
 
     pub fn display(&mut self) -> io::Result<()> {
         // let display_lines = &self.file_entry[self.display_y..self.display_y + self.screen_h];
-        self.display_lines();
-
         for (offset, line) in self.display_lines.iter().enumerate() {
-            let syntaxed_line = self.syntaxer.highlight_line(line);
             queue!(
                 self.stdout,
                 cursor::MoveTo(0, u16::try_from(offset).expect("Large")),
-                Print(syntaxed_line)
+                Print(line)
             )?;
         }
 
@@ -218,6 +246,7 @@ impl<'a> Editor<'a> {
         enable_raw_mode()?;
         // queue!(self.stdout, terminal::EnterAlternateScreen)?;
         queue!(self.stdout, terminal::Clear(terminal::ClearType::All))?;
+        self.get_displayable_line();
         self.display()?;
         self.stdout.flush()?;
         loop {
@@ -226,7 +255,6 @@ impl<'a> Editor<'a> {
                     Some(e) => {
                         let exit = self.handle_event(e);
                         if exit {
-                            queue!(self.stdout, terminal::Clear(terminal::ClearType::All))?;
                             break;
                         }
                         self.display()?;
@@ -237,6 +265,7 @@ impl<'a> Editor<'a> {
             }
         }
         // queue!(self.stdout, LeaveAlternateScreen)?;
+        queue!(self.stdout, terminal::Clear(terminal::ClearType::All))?;
         self.stdout.flush()?;
         disable_raw_mode()?;
         Ok(())
