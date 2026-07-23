@@ -110,7 +110,7 @@ impl<'a> Editor<'a> {
             display_y: 0,
             syntaxer: Syntaxer::new(Path::new(path)),
             stdout: io::stdout(),
-            lines: file_entry.iter().count(),
+            lines: file_entry.len(),
             mode: Mode::Normal,
             cmd: String::from(":"),
         })
@@ -522,6 +522,9 @@ impl<'a> Editor<'a> {
     }
 
     pub fn move_cursor_down_x(&mut self) -> anyhow::Result<()> {
+        if self.cursor_line == self.lines - 1 {
+            return Ok(());
+        }
         if self.file_entry[self.cursor_line + 1].len() < self.cursor_x {
             self.cursor_x_rmind.push(self.cursor_x);
             self.cursor_x = self.file_entry[self.cursor_line + 1].len();
@@ -542,7 +545,7 @@ impl<'a> Editor<'a> {
         if self.cursor_line == self.lines {
             return Ok(());
         }
-        if self.cursor_y < self.screen_h - 2 {
+        if self.cursor_y < self.screen_h - 3 {
             self.move_cursor_down_x()?;
             self.cursor_y += 1;
             self.cursor_line += 1;
@@ -669,7 +672,7 @@ impl<'a> Editor<'a> {
 
         self.display_lines = self.file_entry[self.display_y..bound].to_vec();
         let mut syntaxed_lines: Vec<String> = Vec::new();
-        for line in self.file_entry[self.display_y..self.screen_h - 1]
+        for line in self.display_lines 
             .iter()
             .clone()
         {
