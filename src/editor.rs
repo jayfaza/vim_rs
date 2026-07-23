@@ -9,11 +9,7 @@ use anyhow::Context;
 use once_cell::sync::Lazy;
 
 use crossterm::{
-    self, cursor,
-    event::{self, Event, KeyCode::Char, read},
-    queue,
-    style::Print,
-    terminal::{self, disable_raw_mode, enable_raw_mode, size},
+    self, cursor, event::{self, Event, KeyCode::{self, Char}, read}, queue, style::Print, terminal::{self, disable_raw_mode, enable_raw_mode, size},
 };
 use syntect::{
     easy::HighlightLines,
@@ -52,6 +48,11 @@ impl Syntaxer {
     }
 }
 
+pub enum Mode {
+    Normal,
+    Insert,
+}
+
 pub struct Editor<'a> {
     #[warn(dead_code)]
     path_str: String,
@@ -64,12 +65,15 @@ pub struct Editor<'a> {
     cursor_line: usize,
     cursor_y: usize,
     cursor_x: usize,
+    cursor_x_rmind: Vec<usize>,
     display_y: usize,
     file_entry: Vec<String>,
     display_lines: Vec<String>,
     syntaxer: Syntaxer,
     stdout: io::Stdout,
     lines: usize,
+    mode: Mode,
+
 }
 
 impl<'a> Editor<'a> {
@@ -92,10 +96,12 @@ impl<'a> Editor<'a> {
             cursor_line: 0,
             cursor_y: 0,
             cursor_x: 0,
+            cursor_x_rmind: vec![],
             display_y: 0,
             syntaxer: Syntaxer::new(Path::new(path)),
             stdout: io::stdout(),
             lines: file_entry.iter().count(),
+            mode: Mode::Normal,
         })
     }
 
@@ -106,17 +112,75 @@ impl<'a> Editor<'a> {
         Ok(())
     }
 
-    pub fn handle_event(&mut self, key: char) -> anyhow::Result<bool> {
+    pub fn handle_event(&mut self, key: KeyCode) -> anyhow::Result<bool> {
+        match self.mode {
+            Mode::Normal => {},
+            Mode::Insert => {
+                let mut current_line = self.file_entry[self.cursor_line].clone();
+                let input = key.as_char().unwrap_or(' ');
+                if input == ' ' {
+                    self.mode = Mode::Normal;
+                    return Ok(false);
+                }
+                current_line.insert(self.cursor_x, input);
+                self.cursor_x += 1;
+                self.file_entry[self.cursor_line] = current_line.clone();
+
+                self.display_lines[self.cursor_y] = self.syntaxer.highlight_line(&current_line)?;
+                // self.get_displayable_line()?;
+                return Ok(false);
+            }
+        }
         match key {
-            'j' => {
+            Char('i') => {
+                match self.mode {
+                    Mode::Normal => {
+                        self.mode = Mode::Insert;
+                        return Ok(false);
+                    },
+                    Mode::Insert => {
+                        return Ok(false);
+                    }
+                } 
+            }
+            Char('j') => {
                 if self.cursor_line == self.lines {
                     return Ok(false);
                 }
                 if self.cursor_y < self.screen_h - 2 {
+                    if self.file_entry[self.cursor_line + 1].len() < self.cursor_x {
+                        self.cursor_x_rmind.push(self.cursor_x);
+                        self.cursor_x = self.file_entry[self.cursor_line + 1].len();
+                    } else {
+                        let next_line = self.file_entry[self.cursor_line + 1].len();
+                        for x in self.cursor_x_rmind.clone() {
+                            if x <= next_line {
+                                if x > self.cursor_x {
+                                    self.cursor_x = x;
+                                }
+                            }
+                        }
+                    }
                     self.cursor_y += 1;
                     self.cursor_line += 1;
                     return Ok(false);
                 } else {
+                    if self.cursor_line == self.file_entry.len() - 1 {
+                        return Ok(false);
+                    }
+                    if self.file_entry[self.cursor_line + 1].len() < self.cursor_x {
+                        self.cursor_x_rmind.push(self.cursor_x);
+                        self.cursor_x = self.file_entry[self.cursor_line + 1].len();
+                    } else {
+                        let next_line = self.file_entry[self.cursor_line + 1].len();
+                        for x in self.cursor_x_rmind.clone() {
+                            if x <= next_line {
+                                if x > self.cursor_x {
+                                    self.cursor_x = x;
+                                }
+                            }
+                        }
+                    }                   
                     self.display_y += 1;
                     self.cursor_line += 1;
                     self.scroll_down()?;
@@ -124,16 +188,43 @@ impl<'a> Editor<'a> {
                     return Ok(false);
                 }
             }
-            'k' => {
+            Char('k') => {
                 if self.cursor_line == 0 {
                     return Ok(false);
                 }
 
                 if self.cursor_y > 0 {
+                    let prev_line = self.file_entry[self.cursor_line - 1].len();
+                    if self.cursor_x > prev_line {
+                        self.cursor_x_rmind.push(self.cursor_x);
+                        self.cursor_x = prev_line;
+                    } else {
+                        for x in self.cursor_x_rmind.clone() {
+                            if x <= prev_line {
+                                if x > self.cursor_x {
+                                    self.cursor_x = x;
+                                }
+                            }
+                        }
+                    }
                     self.cursor_line -= 1;
                     self.cursor_y -= 1;
                     return Ok(false);
                 } else {
+                    let prev_line = self.file_entry[self.cursor_line - 1].len();
+                    if self.cursor_x > prev_line {
+                        self.cursor_x_rmind.push(self.cursor_x);
+                        self.cursor_x = prev_line;
+                    } else {
+                        for x in self.cursor_x_rmind.clone() {
+                            if x <= prev_line {
+                                if x > self.cursor_x {
+                                    self.cursor_x = x;
+                                }
+                            }
+                        }
+                    }
+                    
                     self.display_y -= 1;
                     self.cursor_line -= 1;
                     self.scroll_up()?;
@@ -141,23 +232,26 @@ impl<'a> Editor<'a> {
                     return Ok(false);
                 }
             }
-            'l' => {
+            Char('l') => {
                 if self.cursor_x < self.screen_w {
-                    self.cursor_x += 1;
+                    if self.cursor_x < self.file_entry[self.cursor_line].len() {
+                        self.cursor_x += 1;
+                    }
                     return Ok(false);
                 } else {
                     return Ok(false);
                 }
             }
-            'h' => {
+            Char('h') => {
                 if self.cursor_x > 0 {
+                    
                     self.cursor_x -= 1;
                     return Ok(false);
                 } else {
                     return Ok(false);
                 }
             }
-            'q' => {
+            Char('q') => {
                 return Ok(true);
             }
             _ => return Ok(false),
@@ -170,27 +264,25 @@ impl<'a> Editor<'a> {
         Ok(())
     }
 
-    pub fn pick_event(&mut self) -> anyhow::Result<Option<char>> {
+    pub fn pick_event(&mut self) -> anyhow::Result<Option<KeyCode>> {
         match read().context("Failed to read events")? {
-            Event::Key(event) => match event.code {
-                Char('j') => return Ok(Some('j')),
-                Char('k') => return Ok(Some('k')),
-                Char('h') => return Ok(Some('h')),
-                Char('l') => return Ok(Some('l')),
-                Char('q') => return Ok(Some('q')),
-                _ => Ok(None),
-            },
+            Event::Key(event) => Ok(Some(event.code)),
             _ => Ok(None),
         }
     }
 
-    pub fn get_displayable_line(&mut self) -> anyhow::Result<()> {
+    pub fn calc_bound(&self) -> usize {
         let range = self.display_y + self.screen_h;
         let bound = match range {
-            range if range > self.lines => self.lines,
-            range if range <= self.lines => range,
-            _ => self.lines,
+            range if range > self.lines => self.lines - 1,
+            range if range <= self.lines => range - 1,
+            _ => self.lines - 1,
         };
+        bound
+    }
+
+    pub fn get_displayable_line(&mut self) -> anyhow::Result<()> {
+        let bound = self.calc_bound();
 
         self.display_lines = self.file_entry[self.display_y..bound].to_vec();
         let mut syntaxed_lines: Vec<String> = Vec::new();
@@ -205,12 +297,7 @@ impl<'a> Editor<'a> {
     pub fn scroll_down(&mut self) -> anyhow::Result<()> {
         self.display_lines.remove(0);
 
-        let range = self.display_y + self.screen_h;
-        let bound = match range {
-            range if range > self.lines => self.lines,
-            range if range <= self.lines => range,
-            _ => self.lines,
-        };
+        let bound = self.calc_bound();
 
         let next_syntaxed_line =
             self.syntaxer
@@ -252,15 +339,25 @@ impl<'a> Editor<'a> {
         queue!(
             self.stdout,
             cursor::MoveTo(
-                0,
-                u16::try_from(self.screen_h).expect("Your monitor is mega large")
+                u16::try_from(
+                    self.screen_w - format!("{}/{}", self.cursor_line, self.cursor_x).len()
+                )
+                .expect("Your monitor is mega large"),
+                u16::try_from(self.screen_h).expect("Your monitor is probably mega large"),
             ),
-            // self.screen_h - usize,
-            // monitor cant be so large to
-            // dont fit in boundaries of usize
-            terminal::Clear(terminal::ClearType::CurrentLine),
-            Print(format!("{}", self.cursor_line))
-        )?;
+            Print(format!("{}/{}", self.cursor_line, self.cursor_x))
+        )
+        .context("Failed to display current cursor line and cursor_x")?;
+
+        queue!(self.stdout, 
+            cursor::MoveTo(
+                0, u16::try_from(self.screen_h).expect("Your monitor is probably mega large")
+            ),
+            Print(match self.mode {
+                Mode::Normal => "normal",
+                Mode::Insert => "INSERT",
+            })
+            )?;
 
         queue!(
             self.stdout,
@@ -268,7 +365,8 @@ impl<'a> Editor<'a> {
                 u16::try_from(self.cursor_x).expect("Large"),
                 u16::try_from(self.cursor_y).expect("Large")
             )
-        )?;
+        )
+        .context("Failed to move cursor to his place")?;
 
         Ok(())
     }
