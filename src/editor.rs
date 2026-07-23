@@ -112,7 +112,7 @@ impl<'a> Editor<'a> {
                 if self.cursor_line == self.lines {
                     return Ok(false);
                 }
-                if self.cursor_y < self.screen_h {
+                if self.cursor_y < self.screen_h - 2 {
                     self.cursor_y += 1;
                     self.cursor_line += 1;
                     return Ok(false);
