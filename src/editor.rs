@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use once_cell::sync::Lazy;
 
 use crossterm::{
@@ -63,19 +63,14 @@ pub enum Mode {
     Command,
 }
 
-pub struct Editor<'a> {
-    #[warn(dead_code)]
+pub struct Editor {
     path_str: String,
-    #[warn(dead_code)]
-    path: &'a Path,
-    #[warn(dead_code)]
-    bufreader: BufReader<File>,
     screen_w: usize,
     screen_h: usize,
     cursor_line: usize,
     cursor_y: usize,
     cursor_x: usize,
-    cursor_x_rmind: Vec<usize>,
+    cursor_x_rmind: usize,
     display_y: usize,
     file_entry: Vec<String>,
     display_lines: Vec<String>,
@@ -86,19 +81,33 @@ pub struct Editor<'a> {
     cmd: String,
 }
 
-impl<'a> Editor<'a> {
-    pub fn new(path: &'a str) -> anyhow::Result<Self> {
-        let mut buf = BufReader::new(File::open(path).context("Failed to create BufReader")?);
-        let mut string = String::new();
-        buf.read_to_string(&mut string)
+impl Editor {
+    pub fn new<'a>(path: &'a str) -> anyhow::Result<Self> {
+        let mut buf = match File::open(path) {
+            Ok(f) => BufReader::new(f),
+            Err(_) => {
+                let mut file = File::create(path)?;
+                file.write_all(b" ")?;
+                BufReader::new(file)
+            }
+        };
+
+        let mut entry = String::new();
+
+        buf.read_to_string(&mut entry)
             .context("Failed to read file entry to string")?;
-        let file_entry: Vec<String> = string.lines().map(String::from).collect();
+        let mut file_entry: Vec<String> = entry.lines().map(String::from).collect();
+
         let (w, h) = size().context("Failed to get terminal size")?;
+
+        if file_entry.len() <= 1 {
+            for _ in 0..h - 4 {
+                file_entry.push("".to_string());
+            }
+        }
 
         Ok(Editor {
             path_str: path.to_string(),
-            path: Path::new(path),
-            bufreader: buf,
             file_entry: file_entry.clone(),
             display_lines: vec![],
             screen_w: w.into(),
@@ -106,7 +115,7 @@ impl<'a> Editor<'a> {
             cursor_line: 0,
             cursor_y: 0,
             cursor_x: 0,
-            cursor_x_rmind: vec![],
+            cursor_x_rmind: 0,
             display_y: 0,
             syntaxer: Syntaxer::new(Path::new(path)),
             stdout: io::stdout(),
@@ -140,111 +149,6 @@ impl<'a> Editor<'a> {
         }
     }
 
-    pub fn enter(&mut self) -> anyhow::Result<()> {
-        /*
-        if next_line.contains("        ") {
-            self.cursor_x = 8;
-            self.clear_screen()?;
-            self.display_lines()?;
-            self.cursor_line += 1;
-            self.cursor_y += 1;
-            return Ok(());
-        }
-        if next_line.contains("    ") {
-            self.cursor_x = 4;
-            self.clear_screen()?;
-            self.display_lines()?;
-            self.cursor_line += 1;
-            self.cursor_y += 1;
-            return Ok(());
-        } */
-
-        let next_line = self.file_entry[self.cursor_line + 1].clone();
-        let mut spaces = " ".to_string();
-        for e in 0..self.screen_w {
-            if next_line.contains(&spaces) {
-                self.cursor_x = e;
-            }
-            spaces.push(char::from(' '));
-        }
-        self.display_lines.insert(self.cursor_y + 1, spaces.clone());
-        self.display_lines.remove(self.display_lines.len() - 1);
-        self.file_entry.insert(self.cursor_line + 1, spaces.clone());
-        self.clear_screen()?;
-        self.display_lines()?;
-        self.cursor_line += 1;
-        self.cursor_y += 1;
-        self.mode = Mode::Insert;
-        Ok(())
-    }
-
-    pub fn ins_enter(&mut self) -> anyhow::Result<()> {
-        let next_line = self.file_entry[self.cursor_line + 1].clone();
-        if next_line.contains("        ") {
-            self.file_entry
-                .insert(self.cursor_line + 1, "        ".to_string());
-
-            self.display_lines
-                .insert(self.cursor_y + 1, "        ".to_string());
-            self.display_lines.remove(self.display_lines.len() - 1);
-            self.cursor_x = 8;
-            self.clear_screen()?;
-            self.display_lines()?;
-            self.cursor_line += 1;
-            self.cursor_y += 1;
-            return Ok(());
-        }
-        if next_line.contains("    ") {
-            self.file_entry
-                .insert(self.cursor_line + 1, "    ".to_string());
-            self.display_lines
-                .insert(self.cursor_y + 1, "    ".to_string());
-            self.display_lines.remove(self.display_lines.len() - 1);
-            self.cursor_x = 4;
-            self.clear_screen()?;
-            self.display_lines()?;
-            self.cursor_line += 1;
-            self.cursor_y += 1;
-            return Ok(());
-        }
-        self.clear_screen()?;
-        self.display_lines()?;
-        self.cursor_line += 1;
-        self.cursor_y += 1;
-        Ok(())
-    }
-
-    pub fn tab(&mut self) -> anyhow::Result<()> {
-        let mut current_line = self.file_entry[self.cursor_line].clone();
-        for _ in 0..4 {
-            current_line.insert(self.cursor_x, ' ');
-        }
-        self.file_entry[self.cursor_line] = current_line.clone();
-        self.display_lines[self.cursor_y] = self.syntaxer.highlight_line(&current_line.clone())?;
-        self.cursor_x += 4;
-        Ok(())
-    }
-    pub fn normal_o(&mut self) -> anyhow::Result<()> {
-        let next_line = self.file_entry[self.cursor_line + 1].clone();
-        let mut spaces = " ".to_string();
-        for e in 0..self.screen_w {
-            if next_line.contains(&spaces) {
-                self.cursor_x = e + 1;
-            }
-            spaces.push(char::from(' '));
-        }
-
-        self.display_lines.insert(self.cursor_y + 1, spaces.clone());
-        self.display_lines.remove(self.display_lines.len() - 1);
-        self.file_entry.insert(self.cursor_line + 1, spaces.clone());
-        self.clear_screen()?;
-        self.display_lines()?;
-        self.cursor_line += 1;
-        self.cursor_y += 1;
-        self.mode = Mode::Insert;
-        Ok(())
-    }
-
     pub fn normal_mode(&mut self, key: KeyCode) -> anyhow::Result<()> {
         match key {
             Char('i') => {
@@ -252,8 +156,7 @@ impl<'a> Editor<'a> {
                 return Ok(());
             }
             Char('o') => {
-                self.normal_o()?;
-                return Ok(());
+                todo!();
             }
             Char(':') => {
                 self.enter_command_mode();
@@ -290,10 +193,10 @@ impl<'a> Editor<'a> {
         }
 
         if key == KeyCode::Tab {
-            self.tab()?;
+            todo!()
         }
         if key == KeyCode::Enter {
-            self.ins_enter()?;
+            todo!()
         }
         if key == KeyCode::Esc {
             self.mode = Mode::Normal;
@@ -306,9 +209,59 @@ impl<'a> Editor<'a> {
 
         current_line.insert(self.cursor_x, input);
         self.cursor_x += 1;
+        self.cursor_x_rmind += 1;
         self.file_entry[self.cursor_line] = current_line.clone();
 
+        if self.display_lines.is_empty() {
+            self.display_lines
+                .push(self.syntaxer.highlight_line(&current_line)?);
+        }
         self.display_lines[self.cursor_y] = self.syntaxer.highlight_line(&current_line)?;
+
+        Ok(())
+    }
+
+    pub fn backspace(&mut self) -> anyhow::Result<()> {
+        let mut current_line = self.file_entry[self.cursor_line].clone();
+        if self.cursor_line == 0 {
+            if self.cursor_x > 0 {
+                current_line.remove(self.cursor_x - 1);
+                self.file_entry[self.cursor_line] = current_line.clone();
+                self.display_lines[self.cursor_y] =
+                    self.syntaxer.highlight_line(&current_line.clone())?;
+                self.cursor_x -= 1;
+                self.display()?;
+            }
+            return Ok(());
+        }
+        let prev_line_len_before = self.file_entry[self.cursor_line - 1].len();
+        if self.cursor_x > 0 {
+            current_line.remove(self.cursor_x - 1);
+            self.file_entry[self.cursor_line] = current_line.clone();
+            self.display_lines[self.cursor_y] =
+                self.syntaxer.highlight_line(&current_line.clone())?;
+            self.cursor_x -= 1;
+        } else {
+            self.file_entry.remove(self.cursor_line);
+            self.file_entry[self.cursor_line - 1].push_str(&current_line);
+            self.display_lines.remove(self.cursor_y);
+            let syntaxed_line = self.syntaxer.highlight_line(&current_line)?;
+            self.display_lines[self.cursor_y - 1].push_str(&syntaxed_line);
+            let bound = self.calc_bound();
+            if self.file_entry.len() < self.display_lines.len() {
+                let bottom_line = "".to_string();
+                self.display_lines.push(bottom_line);
+            } else {
+                let bottom_line = self.file_entry[self.display_y + bound].clone();
+                let bottom_line_syntaxed = self.syntaxer.highlight_line(&bottom_line)?;
+                self.display_lines.push(bottom_line_syntaxed);
+            }
+
+            self.move_cursor_up()?;
+            self.cursor_x = prev_line_len_before;
+            self.cursor_x_rmind = prev_line_len_before;
+        }
+        self.display()?;
 
         Ok(())
     }
@@ -317,22 +270,18 @@ impl<'a> Editor<'a> {
         match key {
             Enter => {
                 if self.cmd == ":q".to_string() {
-                    self.clear_command_line()?;
                     exit(0);
                 } else if self.cmd == ":wq".to_string() {
                     self.overwrite_file()?;
-                    self.clear_command_line()?;
                     exit(0);
                 }
                 self.mode = Mode::Normal;
-                self.clear_command_line()?;
             }
             Backspace => {
                 self.cmd.pop();
             }
             Esc => {
                 self.mode = Mode::Normal;
-                self.clear_command_line()?;
             }
             _ => {}
         }
@@ -441,6 +390,7 @@ impl<'a> Editor<'a> {
 
         Ok(())
     }
+
     pub fn enter_command_mode(&mut self) {
         match self.mode {
             Mode::Normal => {
@@ -464,9 +414,11 @@ impl<'a> Editor<'a> {
     }
 
     pub fn move_cursor_right(&mut self) -> anyhow::Result<()> {
+        let current_line_len = self.file_entry[self.cursor_line].len();
         if self.cursor_x < self.screen_w {
-            if self.cursor_x < self.file_entry[self.cursor_line].len() {
+            if self.cursor_x < current_line_len {
                 self.cursor_x += 1;
+                self.cursor_x_rmind += 1;
             }
             return Ok(());
         } else {
@@ -477,6 +429,7 @@ impl<'a> Editor<'a> {
     pub fn move_cursor_left(&mut self) -> anyhow::Result<()> {
         if self.cursor_x > 0 {
             self.cursor_x -= 1;
+            self.cursor_x_rmind -= 1;
             return Ok(());
         } else {
             return Ok(());
@@ -485,17 +438,10 @@ impl<'a> Editor<'a> {
 
     pub fn move_cursor_up_x(&mut self) -> anyhow::Result<()> {
         let prev_line = self.file_entry[self.cursor_line - 1].len();
-        if self.cursor_x > prev_line {
-            self.cursor_x_rmind.push(self.cursor_x);
+        if self.cursor_x_rmind > prev_line {
             self.cursor_x = prev_line;
         } else {
-            for x in self.cursor_x_rmind.clone() {
-                if x <= prev_line {
-                    if x > self.cursor_x {
-                        self.cursor_x = x;
-                    }
-                }
-            }
+            self.cursor_x = self.cursor_x_rmind;
         }
         Ok(())
     }
@@ -522,21 +468,14 @@ impl<'a> Editor<'a> {
     }
 
     pub fn move_cursor_down_x(&mut self) -> anyhow::Result<()> {
-        if self.cursor_line == self.lines - 1 {
+        if self.cursor_line == self.file_entry.len() - 1 {
             return Ok(());
         }
-        if self.file_entry[self.cursor_line + 1].len() < self.cursor_x {
-            self.cursor_x_rmind.push(self.cursor_x);
-            self.cursor_x = self.file_entry[self.cursor_line + 1].len();
+        let next_line_len = self.file_entry[self.cursor_line + 1].len();
+        if self.cursor_x_rmind > next_line_len {
+            self.cursor_x = next_line_len;
         } else {
-            let next_line = self.file_entry[self.cursor_line + 1].len();
-            for x in self.cursor_x_rmind.clone() {
-                if x <= next_line {
-                    if x > self.cursor_x {
-                        self.cursor_x = x;
-                    }
-                }
-            }
+            self.cursor_x = self.cursor_x_rmind;
         }
         Ok(())
     }
@@ -545,7 +484,7 @@ impl<'a> Editor<'a> {
         if self.cursor_line == self.lines {
             return Ok(());
         }
-        if self.cursor_y < self.screen_h - 3 {
+        if self.cursor_y < self.screen_h - 2 {
             self.move_cursor_down_x()?;
             self.cursor_y += 1;
             self.cursor_line += 1;
@@ -557,6 +496,7 @@ impl<'a> Editor<'a> {
 
             self.display_y += 1;
             self.cursor_line += 1;
+            self.move_cursor_down_x()?;
             self.scroll_down()?;
             self.clear_screen()?;
             return Ok(());
@@ -577,17 +517,6 @@ impl<'a> Editor<'a> {
         Ok(())
     }
 
-    pub fn redraw_line(&mut self, line: usize) -> anyhow::Result<()> {
-        let reline = self.display_lines[line].clone();
-        queue!(
-            self.stdout,
-            cursor::MoveTo(0, u16::try_from(line).expect("Err")),
-            terminal::Clear(terminal::ClearType::CurrentLine),
-            Print(reline)
-        )?;
-        Ok(())
-    }
-
     pub fn display_command_line(&mut self) -> anyhow::Result<()> {
         match self.mode {
             Mode::Command => {
@@ -602,18 +531,6 @@ impl<'a> Editor<'a> {
             }
             _ => Ok(()),
         }
-    }
-
-    pub fn clear_command_line(&mut self) -> anyhow::Result<()> {
-        queue!(
-            self.stdout,
-            cursor::MoveTo(0, u16::try_from(self.screen_h).unwrap()),
-            terminal::Clear(terminal::ClearType::CurrentLine),
-        )?;
-        self.cmd = ":".to_string();
-        self.display_pos()?;
-        self.display_mode()?;
-        Ok(())
     }
 
     pub fn scroll_down(&mut self) -> anyhow::Result<()> {
@@ -672,45 +589,18 @@ impl<'a> Editor<'a> {
 
         self.display_lines = self.file_entry[self.display_y..bound].to_vec();
         let mut syntaxed_lines: Vec<String> = Vec::new();
-        for line in self.display_lines 
-            .iter()
-            .clone()
-        {
+        for line in self.display_lines.iter().clone() {
             let syntax_line = self.syntaxer.highlight_line(&line)?;
             syntaxed_lines.push(syntax_line);
         }
+
         self.display_lines = syntaxed_lines;
-        Ok(())
-    }
-
-    pub fn backspace(&mut self) -> anyhow::Result<()> {
-        let mut current_line = self.file_entry[self.cursor_line].clone();
-        if self.cursor_x > 0 {
-            current_line.remove(self.cursor_x - 1);
-            self.cursor_x -= 1;
-            self.file_entry[self.cursor_line] = current_line.clone();
-            self.display_lines[self.cursor_y] = self.syntaxer.highlight_line(&current_line)?;
-            self.redraw_line(self.cursor_y)?;
-        } else {
+        if self.display_lines.len() == 0 {
+            for _ in 0..self.screen_h - 1 {
+                self.display_lines.push("".to_string());
+                self.file_entry.push("".to_string());
+            }
         }
-        Ok(())
-    }
-
-    pub fn remove_line(&mut self, i: usize) -> anyhow::Result<()> {
-        self.file_entry.remove(i);
-        self.display_lines.remove(i - 2);
-        let new_line_syn = self
-            .syntaxer
-            .highlight_line(&self.file_entry[self.screen_h - 1])?;
-        self.display_lines.push(new_line_syn.clone());
-        Ok(())
-    }
-
-    pub fn add_line(&mut self, i: usize, line: String) -> anyhow::Result<()> {
-        self.file_entry.insert(i, line.clone());
-        self.display_lines
-            .insert(i, self.syntaxer.highlight_line(&line.clone())?);
-        self.display_lines.remove(self.display_lines.len() - 1);
         Ok(())
     }
 }
