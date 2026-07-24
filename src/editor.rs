@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Context, bail};
+use anyhow::Context;
 use once_cell::sync::Lazy;
 
 use crossterm::{
@@ -155,9 +155,6 @@ impl Editor {
                 self.enter_insert_mode();
                 return Ok(());
             }
-            Char('o') => {
-                todo!();
-            }
             Char(':') => {
                 self.enter_command_mode();
                 return Ok(());
@@ -178,9 +175,6 @@ impl Editor {
                 self.move_cursor_left()?;
                 return Ok(());
             }
-            Char('q') => {
-                return Ok(());
-            }
             _ => return Ok(()),
         }
     }
@@ -192,12 +186,6 @@ impl Editor {
             self.backspace()?;
         }
 
-        if key == KeyCode::Tab {
-            todo!()
-        }
-        if key == KeyCode::Enter {
-            todo!()
-        }
         if key == KeyCode::Esc {
             self.mode = Mode::Normal;
         }
@@ -223,43 +211,13 @@ impl Editor {
 
     pub fn backspace(&mut self) -> anyhow::Result<()> {
         let mut current_line = self.file_entry[self.cursor_line].clone();
-        if self.cursor_line == 0 {
-            if self.cursor_x > 0 {
-                current_line.remove(self.cursor_x - 1);
-                self.file_entry[self.cursor_line] = current_line.clone();
-                self.display_lines[self.cursor_y] =
-                    self.syntaxer.highlight_line(&current_line.clone())?;
-                self.cursor_x -= 1;
-                self.display()?;
-            }
-            return Ok(());
-        }
-        let prev_line_len_before = self.file_entry[self.cursor_line - 1].len();
         if self.cursor_x > 0 {
             current_line.remove(self.cursor_x - 1);
             self.file_entry[self.cursor_line] = current_line.clone();
             self.display_lines[self.cursor_y] =
                 self.syntaxer.highlight_line(&current_line.clone())?;
             self.cursor_x -= 1;
-        } else {
-            self.file_entry.remove(self.cursor_line);
-            self.file_entry[self.cursor_line - 1].push_str(&current_line);
-            self.display_lines.remove(self.cursor_y);
-            let syntaxed_line = self.syntaxer.highlight_line(&current_line)?;
-            self.display_lines[self.cursor_y - 1].push_str(&syntaxed_line);
-            let bound = self.calc_bound();
-            if self.file_entry.len() < self.display_lines.len() {
-                let bottom_line = "".to_string();
-                self.display_lines.push(bottom_line);
-            } else {
-                let bottom_line = self.file_entry[self.display_y + bound].clone();
-                let bottom_line_syntaxed = self.syntaxer.highlight_line(&bottom_line)?;
-                self.display_lines.push(bottom_line_syntaxed);
-            }
-
-            self.move_cursor_up()?;
-            self.cursor_x = prev_line_len_before;
-            self.cursor_x_rmind = prev_line_len_before;
+            self.cursor_x_rmind -= 1;
         }
         self.display()?;
 
@@ -276,12 +234,14 @@ impl Editor {
                     exit(0);
                 }
                 self.mode = Mode::Normal;
+                self.cmd = ":".to_string();
             }
             Backspace => {
                 self.cmd.pop();
             }
             Esc => {
                 self.mode = Mode::Normal;
+                self.cmd = ":".to_string();
             }
             _ => {}
         }
