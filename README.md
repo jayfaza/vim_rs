@@ -1,5 +1,5 @@
 # Hello there!
-## My project - rust-alternative for famous vim editor.
+## My project - rust-alternative for vim.
 <img width="1795" height="1003" alt="image" src="https://github.com/user-attachments/assets/dde4b5ec-7822-4a1d-97ab-c9907c7826e2" />
 ## It was written in native rust code with some rust libraries like:
 
@@ -13,4 +13,5 @@
 
 ## [once_cell](https://docs.rs/once_cell) - to avoid some problems with lifetimes
 
-# I know that here is so much problems with safety and others but I'll deal with that.
+# I know that here is so much problems with safety and others but I'll deal with that, for now the only feature is to watch files.
+
