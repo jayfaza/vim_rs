@@ -74,8 +74,8 @@ fn key_j(
 
 fn key_k(editor_state: &mut EditorState, file: &mut OpenFile) -> anyhow::Result<()> {
     if editor_state.cursor_y > 0 {
-        if editor_state.cursor_line > 0 {
-            if let Some(top_line) = file.content.get(editor_state.cursor_line - 1) {
+        if editor_state.cursor_line > 0
+            && let Some(top_line) = file.content.get(editor_state.cursor_line - 1) {
                 if top_line.len() < editor_state.cursor_x as usize {
                     editor_state.cursor_x = top_line.len() as u16;
                 }
@@ -87,13 +87,15 @@ fn key_k(editor_state: &mut EditorState, file: &mut OpenFile) -> anyhow::Result<
                 {
                     editor_state.cursor_x = top_line.len() as u16;
                 }
+                if top_line.is_empty() {
+                    editor_state.cursor_x = 0;
+                }
             }
-        }
         editor_state.cursor_y -= 1;
         editor_state.cursor_line -= 1;
     } else {
-        if editor_state.cursor_line > 0 {
-            if let Some(top_line) = file.content.get(editor_state.cursor_line - 1) {
+        if editor_state.cursor_line > 0
+            && let Some(top_line) = file.content.get(editor_state.cursor_line - 1) {
                 if top_line.len() < editor_state.cursor_x as usize {
                     editor_state.cursor_x = top_line.len() as u16;
                 }
@@ -105,8 +107,10 @@ fn key_k(editor_state: &mut EditorState, file: &mut OpenFile) -> anyhow::Result<
                 {
                     editor_state.cursor_x = top_line.len() as u16;
                 }
+                if top_line.is_empty() {
+                    editor_state.cursor_x = 0;
+                }
             }
-        }
         if editor_state.display_offset > 0 {
             editor_state.display_offset -= 1;
             editor_state.cursor_line -= 1;
