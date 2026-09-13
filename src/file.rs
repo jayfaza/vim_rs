@@ -1,5 +1,5 @@
-use std::fs;
 use anyhow::Context;
+use std::fs;
 
 #[derive(Debug)]
 pub struct OpenFile {
@@ -21,7 +21,7 @@ impl OpenFile {
         Ok(fs::read_to_string(path)
             .context(format!("Failed to read file: {}", path))?
             .lines()
-            .map(|e| e.to_string())
+            .map(|e| e.to_string().trim().to_string())
             .collect())
     }
 }

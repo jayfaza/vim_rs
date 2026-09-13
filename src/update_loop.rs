@@ -1,4 +1,3 @@
-use crossterm::event::KeyCode::Char;
 use crossterm::event::{self, poll, read};
 use crossterm::style::Print;
 use crossterm::{cursor, queue, terminal};
@@ -6,7 +5,7 @@ use std::io::{Stdout, Write, stdout};
 use std::time::Duration;
 
 use crate::editor::EditorState;
-use crate::event_handler::{EventKey, handle_key};
+use crate::event_handler::handle_key;
 use crate::file::OpenFile;
 use crate::screen::Screen;
 
@@ -24,26 +23,7 @@ impl UpdateLoop {
             if poll(Duration::from_millis(50))?
                 && let event::Event::Key(event) = read()?
             {
-                match event.code {
-                    Char('j') => {
-                        handle_key(screen, editor_state, file, EventKey::KeyJ)?;
-                        redisplay(screen, file, editor_state, &mut stdout)?;
-                    }
-                    Char('k') => {
-                        handle_key(screen, editor_state, file, EventKey::KeyK)?;
-                        redisplay(screen, file, editor_state, &mut stdout)?;
-                    }
-                    Char('h') => {
-                        handle_key(screen, editor_state, file, EventKey::KeyH)?;
-                        redisplay(screen, file, editor_state, &mut stdout)?;
-                    }
-                    Char('l') => {
-                        handle_key(screen, editor_state, file, EventKey::KeyL)?;
-                        redisplay(screen, file, editor_state, &mut stdout)?;
-                    }
-                    Char('q') => break,
-                    _ => {}
-                }
+                handle_key(screen, editor_state, file, &mut stdout, event.code)?;
             }
         }
         Ok(())
