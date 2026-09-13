@@ -52,18 +52,15 @@ pub fn redisplay(
         }
     }
 
-    match editor_state.mode {
-        EditorMode::Command => {
-            queue!(
-                stdout,
-                cursor::MoveTo(0, screen.h - 1),
-                terminal::Clear(terminal::ClearType::CurrentLine),
-                Print(":"),
-                Print(&editor_state.command)
-            )?;
-            stdout.flush()?;
-        }
-        _ => {}
+    if let EditorMode::Command = editor_state.mode {
+        queue!(
+            stdout,
+            cursor::MoveTo(0, screen.h - 1),
+            terminal::Clear(terminal::ClearType::CurrentLine),
+            Print(":"),
+            Print(&editor_state.command)
+        )?;
+        stdout.flush()?;
     }
 
     queue!(

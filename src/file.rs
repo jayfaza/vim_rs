@@ -33,9 +33,9 @@ impl OpenFile {
             .open(&self.path).context("Failed to write file")?;
         let mut buf = String::new();
         for (idx, string) in self.content.iter().enumerate() {
-            if let Some(_) = self.content.get(idx + 1) {
+            if self.content.get(idx + 1).is_some() {
                 buf.push_str(string);
-                buf.push_str("\n");
+                buf.push('\n');
             } else {
                 buf.push_str(string);
             }
