@@ -1,7 +1,8 @@
 #[derive(Debug)]
 pub enum EditorMode {
     Normal,
-    Insert
+    Insert,
+    Command
 }
 
 #[derive(Debug)]
@@ -12,6 +13,7 @@ pub struct EditorState {
     pub cursor_line: usize,
     pub display_offset: usize,
     pub mode: EditorMode,
+    pub command: String,
 }
 
 impl EditorState {
@@ -23,6 +25,7 @@ impl EditorState {
             cursor_line: 0,
             display_offset: 0,
             mode: EditorMode::Normal,
+            command: String::new(),
         }
     }
 }

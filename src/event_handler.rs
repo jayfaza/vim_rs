@@ -1,4 +1,4 @@
-use crossterm::event::KeyCode::{self, Char, Esc};
+use crossterm::event::KeyCode::{self, Backspace, Char, Enter, Esc};
 use std::{io::Stdout, process::exit};
 
 use crate::{
@@ -36,6 +36,10 @@ pub fn handle_key(
             Char('i') => {
                 editor_state.mode = EditorMode::Insert;
             }
+            Char(':') => {
+                editor_state.mode = EditorMode::Command;
+                redisplay(screen, file, editor_state, stdout)?;
+            }
             Char('q') => exit(0),
             _ => {}
         },
@@ -46,6 +50,40 @@ pub fn handle_key(
             }
             event_insert(editor_state, file, key)?;
             redisplay(screen, file, editor_state, stdout)?;
+        }
+        EditorMode::Command => {
+            match key {
+                Esc => {
+                    editor_state.mode = EditorMode::Normal;
+                    editor_state.command.clear();
+                    return Ok(());
+                }
+                Backspace => {
+                    if !editor_state.command.is_empty() {
+                        editor_state.command.pop();
+                        redisplay(screen, file, editor_state, stdout)?;
+                    }
+                }
+                Enter => {
+                    match editor_state.command.as_str() {
+                        "q" => exit(0),
+                        "w" => file.write()?,
+                        "wq" => {
+                            file.write()?;
+                            exit(0);
+                        }
+                        _ => {}
+                    }
+                    editor_state.command.clear();
+                    editor_state.mode = EditorMode::Normal;
+                    redisplay(screen, file, editor_state, stdout)?;
+                }
+                Char(ch) => {
+                    editor_state.command.push(ch);
+                    redisplay(screen, file, editor_state, stdout)?;
+                }
+                _ => {},
+            }
         }
     }
 

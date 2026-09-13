@@ -4,7 +4,7 @@ use crossterm::{cursor, queue, terminal};
 use std::io::{Stdout, Write, stdout};
 use std::time::Duration;
 
-use crate::editor::EditorState;
+use crate::editor::{EditorMode, EditorState};
 use crate::event_handler::handle_key;
 use crate::file::OpenFile;
 use crate::screen::Screen;
@@ -50,6 +50,20 @@ pub fn redisplay(
         {
             queue!(stdout, cursor::MoveTo(0, offset), Print(line))?;
         }
+    }
+
+    match editor_state.mode {
+        EditorMode::Command => {
+            queue!(
+                stdout,
+                cursor::MoveTo(0, screen.h - 1),
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                Print(":"),
+                Print(&editor_state.command)
+            )?;
+            stdout.flush()?;
+        }
+        _ => {}
     }
 
     queue!(
